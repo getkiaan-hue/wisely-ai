@@ -1,8 +1,9 @@
 // Wisely AI server (free version, powered by Google Gemini's free tier).
 // This file runs on Vercel, never in the visitor's browser, so your API key stays secret.
+import { accountsOn, getUser, useMessage, refundMessage } from "./_accounts.js";
 export const config = { runtime: "edge" };
 
-const MODEL = "gemini-3.1-flash-lite";  // has a free tier; "gemini-3.1-flash-lite" is a backup option
+const MODEL = "gemini-3.1-flash-lite";  // fast and cheap; "gemini-3.5-flash" is smarter but has a smaller free limit
 const MAX_REPLY_TOKENS = 8192;     // caps how long one answer can be
 const MAX_HISTORY = 20;            // only the last 20 messages are sent
 const MAX_MESSAGE_CHARS = 4000;    // blocks giant pasted messages
@@ -31,8 +32,22 @@ export default async function handler(req) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return new Response("Server is missing GEMINI_API_KEY (error 500)", { status: 500 });
 
+  // Accounts: once Supabase is set up, people must be signed in, and free users get a daily limit.
+  let user = null, usage = null;
+  if (accountsOn()) {
+    user = await getUser(req);
+    if (!user) return new Response("Please sign in (error 401)", { status: 401 });
+    try { usage = await useMessage(user.id); }
+    catch (e) { console.error(e); return new Response("Account check failed (error 503)", { status: 503 }); }
+    if (!usage.allowed) {
+      return new Response(JSON.stringify(usage), { status: 403, headers: { "content-type": "application/json" } });
+    }
+  }
+  const usageHeaders = usage ? { "x-wisely-used": String(usage.used), "x-wisely-limit": String(usage.limit), "x-wisely-plan": String(usage.plan) } : {};
+  const fail = async (text, status) => { if (user) await refundMessage(user.id); return new Response(text, { status }); };
+
   let body;
-  try { body = await req.json(); } catch { return new Response("Bad request (error 400)", { status: 400 }); }
+  try { body = await req.json(); } catch { return fail("Bad request (error 400)", 400); }
 
   // Turn what the browser sent into Gemini's format, checking everything along the way.
   let inlineBytes = 0;
@@ -46,7 +61,7 @@ export default async function handler(req) {
         const name = String(a.name || "file").slice(0, 100);
         if (typeof a.data === "string" && ALLOWED_TYPES.includes(a.mimeType)) {
           inlineBytes += a.data.length;
-          if (inlineBytes > MAX_INLINE_BYTES) return new Response("Files too big (error 413)", { status: 413 });
+          if (inlineBytes > MAX_INLINE_BYTES) return fail("Files too big (error 413)", 413);
           parts.push({ text: `[Attached file: ${name}]` });
           parts.push({ inlineData: { mimeType: a.mimeType, data: a.data } });
         } else if (typeof a.text === "string") {
@@ -63,7 +78,7 @@ export default async function handler(req) {
   }
   while (contents.length && contents[0].role !== "user") contents.shift();
   if (!contents.length || contents[contents.length - 1].role !== "user") {
-    return new Response("Bad request (error 400)", { status: 400 });
+    return fail("Bad request (error 400)", 400);
   }
 
   // Tell Wisely today's date (Eastern Time), so it doesn't think it's still the year its training ended.
@@ -112,7 +127,7 @@ export default async function handler(req) {
   if (!upstream.ok || !upstream.body) {
     console.error("Gemini error", upstream.status, await upstream.text().catch(() => ""));
     const status = upstream.status === 429 ? 429 : 502;
-    return new Response(`AI error (error ${upstream.status})`, { status });
+    return fail(`AI error (error ${upstream.status})`, status);
   }
 
   // Turn Gemini's event stream into plain text the page can show word by word.
@@ -159,6 +174,6 @@ export default async function handler(req) {
   });
 
   return new Response(stream, {
-    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", ...usageHeaders }
   });
 }
