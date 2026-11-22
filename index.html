@@ -472,8 +472,11 @@ async function send(text){
       throw err;
     }
     const reader = res.body.getReader(), dec = new TextDecoder();
+    // Backup: if nothing new arrives for 30 seconds, treat the answer as finished.
+    const idle = () => new Promise(r => setTimeout(() => r({ done: true, idle: true }), 30000));
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value, idle: timedOut } = await Promise.race([reader.read(), idle()]);
+      if (timedOut) { reader.cancel().catch(() => {}); break; }
       if (done) break;
       answer += dec.decode(value, { stream: true });
       chat._live = answer; draw();
@@ -527,13 +530,16 @@ document.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth
 document.addEventListener("dragover", e => e.preventDefault());
 document.addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; $("dropzone").classList.remove("on"); if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
 $("newChat").onclick = () => newChat();
-window.addEventListener("pagehide", save);
+window.addEventListener("pagehide", () => {
+  state.chats.forEach(c => { if (c._busy && c._live) { c.messages.push({ role: "assistant", content: c._live }); c._busy = false; c._live = ""; } });
+  save();
+});
 $("addProj").onclick = () => { addingProject = true; state.projects.length; renderSide(); };
 $("menu").onclick = () => $("side").classList.toggle("open");
 
 load(); renderSide();
 // Wait for the formatting scripts to load before showing old chats.
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", route); else route();
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => { if (!current) route(); }); else route();
 </script>
 </body>
 </html>
