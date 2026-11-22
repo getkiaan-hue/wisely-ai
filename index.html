@@ -174,7 +174,12 @@ let addingProject = false;
 function load(){ try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.chats) state = Object.assign(state, s); } catch(e){} }
 // Photos and files are too big to save in the browser, so only their names are saved.
 // Keys starting with "_" are temporary (like an answer still being written) and aren't saved either.
-function save(){ try { localStorage.setItem(KEY, JSON.stringify(state, (k, v) => (k === "data" || k === "ftext" || k === "thumb" || k[0] === "_") ? undefined : v)); } catch(e){} }
+let saveWarned = false;
+function save(){
+  if (current) state.last = current.id;
+  try { localStorage.setItem(KEY, JSON.stringify(state, (k, v) => (k === "data" || k === "ftext" || k === "thumb" || k[0] === "_") ? undefined : v)); }
+  catch(e){ if (!saveWarned) { saveWarned = true; toast("⚠️ Your browser blocked saving chats (private window, or storage is full). Chats will be lost when you close this tab."); } }
+}
 const uid = () => Math.random().toString(36).slice(2, 10);
 const esc = s => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
 function md(t){ try { return DOMPurify.sanitize(marked.parse(t)); } catch(e){ return esc(t); } }
@@ -305,6 +310,7 @@ function openChat(c, fromHash){
   setMode(c.mode || "balanced");
   $("side").classList.remove("open");
   if (!fromHash) setHash("chat-" + c.id);
+  state.last = c.id; save();
   renderSide(); updateSendBtn();
   scroller.scrollTop = scroller.scrollHeight;
 }
@@ -321,7 +327,10 @@ function setHash(h){ if (location.hash !== "#" + h) { ignoreHash = true; locatio
 function route(){
   const h = location.hash.slice(1);
   const c = h.startsWith("chat-") && state.chats.find(x => x.id === h.slice(5));
-  if (c) openChat(c, true); else newChat(true);
+  if (c) return openChat(c, true);
+  // Fresh visit with no chat in the address: reopen the last chat you were on.
+  const last = !h && state.chats.find(x => x.id === state.last);
+  if (last) openChat(last); else newChat(true);
 }
 window.addEventListener("hashchange", () => { if (ignoreHash) { ignoreHash = false; return; } route(); });
 
