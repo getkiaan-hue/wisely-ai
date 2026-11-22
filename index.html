@@ -85,10 +85,31 @@
   .user .atts img{max-width:220px;max-height:220px;border-radius:12px;border:1px solid var(--line);display:block}
   .user .txt{background:var(--blue);color:#fff;padding:11px 15px;border-radius:14px;margin-top:6px;white-space:pre-wrap;display:inline-block}
   .user .bubble.has-atts{text-align:right;white-space:normal}
+  .account{border-top:1px solid var(--line);padding:12px 14px;font-size:13px;display:none}
+  .account.on{display:block}
+  .account .who{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .account .left{color:var(--muted);margin:3px 0 8px}
+  .meter{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin:6px 0 4px}
+  .meter i{display:block;height:100%;background:var(--accent);width:0}
+  .account button{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:5px 10px;font-size:12px}
+  .signin{position:fixed;inset:0;background:rgba(29,36,51,.45);display:none;place-items:center;z-index:30;padding:16px}
+  .signin.on{display:grid}
+  .signin .card{background:var(--card);border-radius:18px;padding:28px 26px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+  .signin svg{width:56px;height:56px}
+  .signin h2{margin:12px 0 4px;font-size:22px}
+  .signin p{color:var(--muted);margin:0 0 18px;line-height:1.5}
+  .signin input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font:inherit;outline:0;margin-bottom:10px}
+  .signin input:focus{border-color:var(--accent)}
+  .signin .go{width:100%;padding:11px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-weight:600}
+  .signin .go:disabled{opacity:.5}
+  .signin .msg{font-size:13px;margin-top:12px;min-height:1em}
+  .signin .msg.bad{color:#c0392b}
+  .signin .perks{font-size:13px;color:var(--muted);margin-top:16px}
+  .limit-box{background:var(--accent-soft);color:#7a5410;border-radius:12px;padding:12px 14px;line-height:1.5}
   .dropzone{position:fixed;inset:0;background:rgba(232,163,58,.15);border:3px dashed var(--accent);display:none;place-items:center;font-size:22px;font-weight:600;color:#7a5410;z-index:20;pointer-events:none}
   .dropzone.on{display:grid}
-  form{max-width:740px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 6px 6px 14px}
-  form:focus-within{border-color:var(--accent)}
+  #form{max-width:740px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 6px 6px 14px}
+  #form:focus-within{border-color:var(--accent)}
   textarea{flex:1;resize:none;border:0;outline:0;background:transparent;font:inherit;line-height:1.5;max-height:180px;padding:8px 0}
   .send{width:38px;height:38px;border-radius:10px;border:0;background:var(--accent);color:#fff;display:grid;place-items:center;flex:none}
   .send:disabled{opacity:.4;cursor:default}
@@ -127,6 +148,12 @@
       <div class="sec">💬 Recent chats</div>
       <div id="recent"></div>
     </div>
+    <div class="account" id="account">
+      <div class="who" id="accWho"></div>
+      <div class="meter"><i id="accBar"></i></div>
+      <div class="left" id="accLeft"></div>
+      <button id="signOut">Sign out</button>
+    </div>
   </aside>
 
   <div class="main">
@@ -155,6 +182,17 @@
       <input type="file" id="fileIn" multiple hidden accept="image/*,.pdf,.docx,.txt,.md,.csv,.json,.html,.htm,.js,.ts,.py,.java,.c,.cpp,.h,.css,.xml,.sql">
       <input type="file" id="camIn" hidden accept="image/*" capture="environment">
     </footer>
+    <div class="signin" id="signin">
+      <form class="card" id="signinForm">
+        <svg><use href="#owl"/></svg>
+        <h2>Sign in to Wisely</h2>
+        <p id="signinText">Type your email and we'll send you a sign-in link. No password needed.</p>
+        <input type="email" id="signinEmail" placeholder="you@example.com" required autocomplete="email">
+        <button class="go" id="signinGo" type="submit">Email me a sign-in link</button>
+        <div class="msg" id="signinMsg"></div>
+        <div class="perks" id="signinPerks"></div>
+      </form>
+    </div>
     <div class="dropzone" id="dropzone">Drop files to add them 🦉</div>
   </div>
 </div>
@@ -332,7 +370,11 @@ function route(){
   const last = !h && state.chats.find(x => x.id === state.last);
   if (last) openChat(last); else newChat(true);
 }
-window.addEventListener("hashchange", () => { if (ignoreHash) { ignoreHash = false; return; } route(); });
+window.addEventListener("hashchange", () => {
+  if (ignoreHash) { ignoreHash = false; return; }
+  if (/access_token|error_description|error_code/.test(location.hash)) return;  // sign-in link, handled by setupAccounts
+  route();
+});
 
 // ---------- attachments ----------
 let pendingAtts = [], loadingCount = 0;
@@ -430,6 +472,7 @@ function buildBody(chat, proj){
 async function send(text){
   text = text.trim();
   if (!text && !pendingAtts.length) return false;
+  if (needsSignIn()) { showSignIn(); return false; }
   if (current && current._busy) { toast("Wait for Wisely to finish this answer, or start a new chat."); return false; }
   if (loadingCount) { toast("Wait a second, your files are still loading."); return false; }
   const atts = pendingAtts; pendingAtts = []; renderPending();
@@ -462,9 +505,12 @@ async function send(text){
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: Object.assign({ "Content-Type": "application/json" }, session ? { authorization: "Bearer " + session.access_token } : {}),
       body: buildBody(chat, proj)
     });
+    if (res.status === 401 && accounts.accounts) { session = null; showUsage(); showSignIn("Please sign in again."); throw Object.assign(new Error("signin"), {}); }
+    if (res.status === 403) { const u = await res.json().catch(() => ({})); showUsage(u); throw Object.assign(new Error("limit"), { usage: u }); }
+    if (res.headers.get("x-wisely-used")) showUsage({ used: res.headers.get("x-wisely-used"), limit: res.headers.get("x-wisely-limit"), plan: res.headers.get("x-wisely-plan") });
     if (!res.ok) {
       const t = await res.text().catch(() => "");
       const err = new Error(res.status === 429 ? "busy" : res.status === 413 ? "toobig" : "failed");
@@ -491,6 +537,11 @@ async function send(text){
       // Put the question back in the box so it can be sent again with one click.
       if (current === chat && !input.value && failed && failed.content) { input.value = failed.content; grow(); }
       const b = (current === chat && chat._bubble) || document.createElement("div");
+      if (e.message === "limit") {
+        b.innerHTML = '<div class="limit-box">🦉 <b>You\'ve used all ' + ((e.usage && e.usage.limit) || accounts.freeLimit || 23) + ' free messages for today.</b><br>They reset at midnight (Eastern time). <b>Wisely Pro</b> with unlimited messages is coming soon!</div>';
+        return true;
+      }
+      if (e.message === "signin") { b.innerHTML = '<span class="err">Sign in to keep chatting.</span>'; return true; }
       const msg = e.message === "busy" ? "Wisely is resting! Too many questions right now. Try again in a minute, or tomorrow if the daily limit was reached."
                 : e.message === "toobig" ? "Those files are too big to send together. Try fewer or smaller files."
                 : "Hoo-oops, something went wrong" + (e.code ? " (error " + e.code + ")" : "") + ". Try again.";
@@ -504,12 +555,87 @@ async function send(text){
   return true;
 }
 
+// ---------- accounts (sign-in and daily limit) ----------
+// Accounts only turn on once Supabase is set up in Vercel. Until then, no sign-in is needed.
+let accounts = { accounts: false }, sb = null, session = null;
+const needsSignIn = () => accounts.accounts && !session;
+
+function loadScript(src){
+  return new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => bad(new Error("couldn't load " + src)); document.head.appendChild(s); });
+}
+function showSignIn(note){
+  $("signinPerks").textContent = "Free: " + (accounts.freeLimit || 23) + " messages a day. Your chats stay saved in this browser.";
+  $("signinMsg").textContent = note || ""; $("signinMsg").className = "msg" + (note ? " bad" : "");
+  $("signin").classList.add("on");
+  setTimeout(() => $("signinEmail").focus(), 50);
+}
+function hideSignIn(){ $("signin").classList.remove("on"); }
+
+function showUsage(u){
+  const box = $("account");
+  if (!accounts.accounts || !session) { box.classList.remove("on"); return; }
+  box.classList.add("on");
+  $("accWho").textContent = session.user?.email || "Signed in";
+  if (!u) return;
+  if (u.plan === "pro") { $("accLeft").textContent = "⭐ Pro: unlimited messages"; $("accBar").style.width = "100%"; return; }
+  const limit = Number(u.limit) || accounts.freeLimit || 23, used = Math.min(Number(u.used) || 0, limit);
+  $("accLeft").textContent = (limit - used) + " of " + limit + " free messages left today";
+  $("accBar").style.width = (used / limit * 100) + "%";
+}
+async function refreshUsage(){
+  if (!session) return;
+  try {
+    const r = await fetch("/api/me", { headers: { authorization: "Bearer " + session.access_token } });
+    if (r.status === 401) { session = null; showUsage(); showSignIn("Your sign-in expired. Please sign in again."); return; }
+    showUsage(await r.json());
+  } catch(e){ showUsage(); }
+}
+
+async function setupAccounts(){
+  try { accounts = await (await fetch("/api/config")).json(); } catch(e){ accounts = { accounts: false }; }
+  if (!accounts.accounts) return;
+  try {
+    await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js");
+    sb = window.supabase.createClient(accounts.supabaseUrl, accounts.supabaseKey, {
+      auth: { flowType: "implicit", detectSessionInUrl: true, persistSession: true, autoRefreshToken: true }
+    });
+    session = (await sb.auth.getSession()).data.session;
+    // A sign-in link adds login details to the address; tidy them away.
+    if (/access_token|error_description|error_code/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search);
+    sb.auth.onAuthStateChange((event, s) => {
+      session = s;
+      if (s) { hideSignIn(); refreshUsage(); } else { showUsage(); showSignIn(); }
+    });
+  } catch(e){
+    console.error(e);
+    showSignIn("Sign-in isn't working right now. Try refreshing the page.");
+    return;
+  }
+  if (session) { hideSignIn(); refreshUsage(); } else showSignIn();
+}
+
+$("signinForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!sb) return;
+  const email = $("signinEmail").value.trim();
+  $("signinGo").disabled = true; $("signinMsg").className = "msg"; $("signinMsg").textContent = "Sending…";
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
+  $("signinGo").disabled = false;
+  if (error) {
+    $("signinMsg").className = "msg bad";
+    $("signinMsg").textContent = /rate|seconds|too many/i.test(error.message) ? "Too many emails sent. Wait a minute and try again." : "Couldn't send the email: " + error.message;
+  } else {
+    $("signinMsg").textContent = "✅ Check your email (" + email + ") and click the link. It opens Wisely signed in.";
+  }
+});
+$("signOut").onclick = async () => { if (sb) await sb.auth.signOut(); session = null; showUsage(); showSignIn(); };
+
 // ---------- events ----------
 // Only clear the box if the message was actually sent, so nothing you type gets lost.
 $("form").addEventListener("submit", e => {
   e.preventDefault();
   const t = input.value;
-  if ((t.trim() || pendingAtts.length) && !(current && current._busy) && !loadingCount) { input.value = ""; grow(); }
+  if ((t.trim() || pendingAtts.length) && !(current && current._busy) && !loadingCount && !needsSignIn()) { input.value = ""; grow(); }
   send(t);
 });
 input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("form").requestSubmit(); } });
@@ -537,9 +663,13 @@ window.addEventListener("pagehide", () => {
 $("addProj").onclick = () => { addingProject = true; state.projects.length; renderSide(); };
 $("menu").onclick = () => $("side").classList.toggle("open");
 
+// Start-up: load saved chats, wait for the formatting scripts, set up sign-in, then open the right chat.
 load(); renderSide();
-// Wait for the formatting scripts to load before showing old chats.
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => { if (!current) route(); }); else route();
+(async () => {
+  if (document.readyState === "loading") await new Promise(r => document.addEventListener("DOMContentLoaded", r));
+  await setupAccounts();
+  if (!current) route();
+})();
 </script>
 </body>
 </html>
