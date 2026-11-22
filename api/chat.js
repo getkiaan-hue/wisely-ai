@@ -66,9 +66,20 @@ export default async function handler(req) {
     return new Response("Bad request (error 400)", { status: 400 });
   }
 
+  // Tell Wisely today's date (Eastern Time), so it doesn't think it's still the year its training ended.
+  const today = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const mode = MODES[body.mode] ? body.mode : "balanced";
   const project = typeof body.project === "string" ? body.project.slice(0, 80) : "";
-  const system = BASE + " " + MODES[mode] + (project ? ` This chat is part of the user's project called "${project}".` : "");
+  const system = `IMPORTANT: Today's date is ${today}. Never guess the date or say you can't know it; use this date. ` +
+    BASE + " " + MODES[mode] +
+    ` Today's date is ${today}. Use it for anything involving ages, years or "how long ago".` +
+    " Your knowledge comes from training data that ends before today, so you may not know about recent events" +
+    " (for example, whether a famous person has died, or who currently holds a job). When a question depends on recent news," +
+    " give what you know, say it might be out of date, and suggest checking a news site or pasting a link." +
+    (project ? ` This chat is part of the user's project called "${project}".` : "");
+
+  // Also put the date right next to the newest question, so Gemini can't miss it.
+  contents[contents.length - 1].parts.unshift({ text: `[Today's date: ${today}]` });
 
   // If the newest message has a link in it, let Gemini open and read the page.
   const lastText = contents[contents.length - 1].parts.map(p => p.text || "").join(" ");
@@ -123,19 +134,26 @@ export default async function handler(req) {
     } catch { /* ignore partial lines */ }
   };
 
+  // Read Gemini's whole answer in one loop and always close the stream at the end,
+  // so the page knows the answer is finished (even if the last piece has no text in it).
   const stream = new ReadableStream({
-    async pull(controller) {
-      const { done, value } = await reader.read();
-      if (done) {
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+          for (const line of lines) handleLine(line.trim(), controller);
+        }
         if (buffer) handleLine(buffer.trim(), controller);
         if (!gotText) controller.enqueue(encoder.encode(NO_ANSWER));
-        controller.close();
-        return;
+      } catch (e) {
+        console.error("Stream error", e);
+        if (!gotText) controller.enqueue(encoder.encode(NO_ANSWER));
       }
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-      for (const line of lines) handleLine(line.trim(), controller);
+      controller.close();
     },
     cancel() { reader.cancel(); }
   });
