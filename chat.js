@@ -66,16 +66,20 @@ export default async function handler(req) {
     return new Response("Bad request (error 400)", { status: 400 });
   }
 
-  const mode = MODES[body.mode] ? body.mode : "balanced";
-  const project = typeof body.project === "string" ? body.project.slice(0, 80) : "";
   // Tell Wisely today's date (Eastern Time), so it doesn't think it's still the year its training ended.
   const today = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const system = BASE + " " + MODES[mode] +
+  const mode = MODES[body.mode] ? body.mode : "balanced";
+  const project = typeof body.project === "string" ? body.project.slice(0, 80) : "";
+  const system = `IMPORTANT: Today's date is ${today}. Never guess the date or say you can't know it; use this date. ` +
+    BASE + " " + MODES[mode] +
     ` Today's date is ${today}. Use it for anything involving ages, years or "how long ago".` +
     " Your knowledge comes from training data that ends before today, so you may not know about recent events" +
     " (for example, whether a famous person has died, or who currently holds a job). When a question depends on recent news," +
     " give what you know, say it might be out of date, and suggest checking a news site or pasting a link." +
     (project ? ` This chat is part of the user's project called "${project}".` : "");
+
+  // Also put the date right next to the newest question, so Gemini can't miss it.
+  contents[contents.length - 1].parts.unshift({ text: `[Today's date: ${today}]` });
 
   // If the newest message has a link in it, let Gemini open and read the page.
   const lastText = contents[contents.length - 1].parts.map(p => p.text || "").join(" ");
