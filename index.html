@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wisely AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<style>
+  :root{--bg:#f4f6fa;--side:#ffffff;--card:#ffffff;--line:#e3e7ef;--text:#1d2433;--muted:#6b7488;--accent:#e8a33a;--accent-soft:#fdf3e1;--blue:#3b6cf6}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:15px}
+  button{font:inherit;color:inherit;cursor:pointer}
+  .app{display:flex;height:100%}
+
+  /* Sidebar */
+  aside{width:260px;flex:none;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column}
+  .brand{display:flex;align-items:center;gap:10px;padding:16px 16px 12px;font-weight:700;font-size:18px}
+  .brand svg{width:30px;height:30px}
+  .brand span{color:var(--accent)}
+  .newchat{margin:0 12px 10px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-weight:600;text-align:left}
+  .newchat:hover{border-color:var(--accent)}
+  .side-scroll{flex:1;overflow-y:auto;padding:0 8px 12px}
+  .sec{display:flex;align-items:center;justify-content:space-between;padding:14px 8px 6px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .sec button{border:0;background:none;color:var(--muted);font-size:16px;line-height:1;padding:0 4px}
+  .sec button:hover{color:var(--accent)}
+  .item{display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:8px;cursor:pointer}
+  .item:hover{background:var(--bg)}
+  .item.on{background:var(--accent-soft)}
+  .item .name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+  .item .act{border:0;background:none;padding:2px 4px;border-radius:6px;color:var(--muted);opacity:0;font-size:13px}
+  .item:hover .act,.item .act.pinned{opacity:1}
+  .item .act:hover{background:var(--line)}
+  .empty{padding:4px 8px;color:var(--muted);font-size:13px}
+  .proj-input{width:100%;padding:7px 8px;border:1px solid var(--accent);border-radius:8px;font:inherit;font-size:14px;outline:0}
+  .sub{padding-left:18px}
+
+  /* Main */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--bg)}
+  .menu{display:none;border:0;background:none;font-size:20px;padding:0 4px}
+  .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .crumb{color:var(--muted);font-size:13px;white-space:nowrap}
+  .modes{margin-left:auto;display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .mode{border:0;background:none;padding:6px 10px;border-radius:7px;font-size:13px;color:var(--muted)}
+  .mode.on{background:var(--accent);color:#fff}
+  #scroll{flex:1;overflow-y:auto}
+  .wrap{max-width:740px;margin:0 auto;padding:24px 18px}
+  .hero{text-align:center;padding:60px 0 20px}
+  .hero svg{width:60px;height:60px}
+  .hero h1{font-size:28px;margin:14px 0 6px}
+  .hero p{color:var(--muted);margin:0 0 24px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+  .chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:8px 14px;font-size:14px}
+  .chip:hover{border-color:var(--accent)}
+  .msg{display:flex;gap:10px;margin:16px 0}
+  .msg.user{justify-content:flex-end}
+  .bubble{max-width:85%;padding:11px 15px;border-radius:14px;line-height:1.55;overflow-wrap:anywhere}
+  .user .bubble{background:var(--blue);color:#fff;white-space:pre-wrap}
+  .bot .bubble{background:var(--card);border:1px solid var(--line)}
+  .avatar{width:28px;height:28px;flex:none;margin-top:3px}
+  .bubble p{margin:0 0 .7em}.bubble p:last-child{margin:0}
+  .bubble ul,.bubble ol{margin:.3em 0 .7em;padding-left:1.3em}
+  .bubble code{background:#f0f2f6;padding:2px 5px;border-radius:5px;font-size:13px}
+  .bubble pre{background:#f0f2f6;padding:12px;border-radius:8px;overflow-x:auto}
+  .bubble pre code{padding:0}
+  .thinking{color:var(--muted);font-style:italic}
+  .err{color:#c0392b}
+  footer{padding:12px 18px 16px}
+  form{max-width:740px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 6px 6px 14px}
+  form:focus-within{border-color:var(--accent)}
+  textarea{flex:1;resize:none;border:0;outline:0;background:transparent;font:inherit;line-height:1.5;max-height:180px;padding:8px 0}
+  .send{width:38px;height:38px;border-radius:10px;border:0;background:var(--accent);color:#fff;display:grid;place-items:center;flex:none}
+  .send:disabled{opacity:.4;cursor:default}
+  .note{text-align:center;color:var(--muted);font-size:12px;margin-top:8px}
+  .unavail{max-width:740px;margin:0 auto 8px;padding:9px 13px;border-radius:10px;background:var(--accent-soft);color:#7a5410;font-size:13px;display:none}
+
+  @media (max-width:760px){
+    aside{position:fixed;inset:0 auto 0 0;z-index:10;transform:translateX(-100%);transition:transform .2s;box-shadow:0 0 30px rgba(0,0,0,.15)}
+    aside.open{transform:none}
+    .menu{display:block}
+    .crumb{display:none}
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <symbol id="owl" viewBox="0 0 64 64">
+    <rect x="2" y="2" width="60" height="60" rx="16" fill="#fdf3e1"/>
+    <path d="M16 20 L22 13 L27 20 M37 20 L42 13 L48 20" fill="none" stroke="#e8a33a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M14 26c0-5 4-8 9-8h18c5 0 9 3 9 8v12c0 10-8 16-18 16S14 48 14 38z" fill="#e8a33a"/>
+    <circle cx="24" cy="30" r="7" fill="#1d2433"/><circle cx="40" cy="30" r="7" fill="#1d2433"/>
+    <circle cx="25.5" cy="29" r="2.4" fill="#fff"/><circle cx="41.5" cy="29" r="2.4" fill="#fff"/>
+    <path d="M29 37 L32 42 L35 37 Z" fill="#1d2433"/>
+  </symbol>
+</defs></svg>
+
+<div class="app">
+  <aside id="side">
+    <div class="brand"><svg><use href="#owl"/></svg>Wisely <span>AI</span></div>
+    <button class="newchat" id="newChat">＋ New chat</button>
+    <div class="side-scroll">
+      <div class="sec">📌 Pinned</div>
+      <div id="pinned"></div>
+      <div class="sec">📁 Projects <button id="addProj" title="New project">＋</button></div>
+      <div id="projects"></div>
+      <div class="sec">💬 Recent chats</div>
+      <div id="recent"></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="top">
+      <button class="menu" id="menu" aria-label="Menu">☰</button>
+      <div class="title" id="title">New chat</div>
+      <div class="crumb" id="crumb"></div>
+      <div class="modes" id="modes">
+        <button class="mode on" data-mode="balanced">Balanced</button>
+        <button class="mode" data-mode="homework">Homework</button>
+        <button class="mode" data-mode="creative">Creative</button>
+      </div>
+    </div>
+    <div id="scroll"><div class="wrap" id="chat"></div></div>
+    <footer>
+      <form id="form">
+        <textarea id="input" rows="1" placeholder="Ask Wisely anything…"></textarea>
+        <button class="send" id="send" type="submit" aria-label="Send">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </form>
+      <div class="note">Wisely AI can make mistakes. Double-check important stuff.</div>
+    </footer>
+  </div>
+</div>
+
+<script>
+// Wisely's personality and modes live in api/chat.js, so visitors can't change them.
+const KEY = "wisely-ai-v1";
+
+const $ = id => document.getElementById(id);
+const chatEl = $("chat"), input = $("input"), sendBtn = $("send"), scroller = $("scroll");
+let state = { chats: [], projects: [], open: {} };
+let current = null;          // current chat object (or null = fresh, unsaved)
+let activeProject = null;    // project new chats go into
+let busy = false, addingProject = false;
+
+// ---------- storage ----------
+function load(){ try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.chats) state = Object.assign(state, s); } catch(e){} }
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){} }
+const uid = () => Math.random().toString(36).slice(2, 10);
+const esc = s => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
+function md(t){ try { return DOMPurify.sanitize(marked.parse(t)); } catch(e){ return esc(t); } }
+
+// ---------- sidebar ----------
+function chatItem(c, indent){
+  const el = document.createElement("div");
+  el.className = "item" + (indent ? " sub" : "") + (current && current.id === c.id ? " on" : "");
+  el.innerHTML = '<span class="name"></span>' +
+    '<button class="act' + (c.pinned ? " pinned" : "") + '" data-pin title="' + (c.pinned ? "Unpin" : "Pin") + '">' + (c.pinned ? "📌" : "📍") + '</button>' +
+    '<button class="act" data-del title="Delete">🗑</button>';
+  el.querySelector(".name").textContent = c.title;
+  el.onclick = e => {
+    if (e.target.closest("[data-pin]")) { c.pinned = !c.pinned; save(); renderSide(); return; }
+    if (e.target.closest("[data-del]")) { state.chats = state.chats.filter(x => x !== c); if (current === c) newChat(); save(); renderSide(); return; }
+    openChat(c);
+  };
+  return el;
+}
+
+function renderSide(){
+  const byDate = [...state.chats].sort((a,b) => b.updated - a.updated);
+  const pinned = $("pinned"); pinned.innerHTML = "";
+  const pins = byDate.filter(c => c.pinned);
+  pins.length ? pins.forEach(c => pinned.appendChild(chatItem(c))) : pinned.innerHTML = '<div class="empty">Pin a chat to keep it here</div>';
+
+  const pr = $("projects"); pr.innerHTML = "";
+  if (addingProject) {
+    const inp = document.createElement("input");
+    inp.className = "proj-input"; inp.placeholder = "Project name, then Enter";
+    inp.onkeydown = e => {
+      if (e.key === "Enter" && inp.value.trim()) { const p = { id: uid(), name: inp.value.trim() }; state.projects.push(p); state.open[p.id] = true; addingProject = false; save(); selectProject(p); }
+      if (e.key === "Escape") { addingProject = false; renderSide(); }
+    };
+    inp.onblur = () => { setTimeout(() => { if (addingProject) { addingProject = false; renderSide(); } }, 150); };
+    pr.appendChild(inp); setTimeout(() => inp.focus());
+  }
+  if (!state.projects.length && !addingProject) pr.innerHTML = '<div class="empty">Group chats into projects</div>';
+  state.projects.forEach(p => {
+    const el = document.createElement("div");
+    el.className = "item" + (activeProject === p.id && !current ? " on" : "");
+    const isOpen = !!state.open[p.id];
+    el.innerHTML = '<span>' + (isOpen ? "▾" : "▸") + '</span><span class="name"></span><button class="act" data-new title="New chat in project">＋</button><button class="act" data-del title="Delete project">🗑</button>';
+    el.querySelector(".name").textContent = p.name;
+    el.onclick = e => {
+      if (e.target.closest("[data-new]")) { selectProject(p); return; }
+      if (e.target.closest("[data-del]")) {
+        state.chats = state.chats.filter(c => c.projectId !== p.id);
+        state.projects = state.projects.filter(x => x !== p);
+        if (activeProject === p.id) activeProject = null;
+        if (current && current.projectId === p.id) newChat();
+        save(); renderSide(); return;
+      }
+      state.open[p.id] = !isOpen; save(); renderSide();
+    };
+    pr.appendChild(el);
+    if (isOpen) {
+      const kids = byDate.filter(c => c.projectId === p.id);
+      kids.length ? kids.forEach(c => pr.appendChild(chatItem(c, true))) : pr.insertAdjacentHTML("beforeend", '<div class="empty sub">No chats yet</div>');
+    }
+  });
+
+  const rc = $("recent"); rc.innerHTML = "";
+  const recent = byDate.filter(c => !c.projectId);
+  recent.length ? recent.forEach(c => rc.appendChild(chatItem(c))) : rc.innerHTML = '<div class="empty">Your chats will show up here</div>';
+  updateTop();
+}
+
+function updateTop(){
+  $("title").textContent = current ? current.title : "New chat";
+  const pid = current ? current.projectId : activeProject;
+  const p = state.projects.find(x => x.id === pid);
+  $("crumb").textContent = p ? "in 📁 " + p.name : "";
+}
+
+// ---------- chat view ----------
+function addMsg(role, html){
+  chatEl.querySelector(".hero")?.remove();
+  const row = document.createElement("div");
+  row.className = "msg " + (role === "user" ? "user" : "bot");
+  if (role !== "user") row.innerHTML = '<svg class="avatar"><use href="#owl"/></svg>';
+  const b = document.createElement("div"); b.className = "bubble";
+  if (role === "user") b.textContent = html; else b.innerHTML = html;
+  row.appendChild(b); chatEl.appendChild(row); scroller.scrollTop = scroller.scrollHeight;
+  return b;
+}
+
+function showHero(){
+  const p = state.projects.find(x => x.id === activeProject);
+  chatEl.innerHTML = '<section class="hero"><svg><use href="#owl"/></svg><h1>Hey, I\'m Wisely.</h1><p>' +
+    (p ? "New chat in <b>" + esc(p.name) + "</b>. What are we working on?" : "Ask me anything: homework, ideas, advice, or random questions.") +
+    '</p><div class="chips">' +
+    ['Explain how black holes work like I\'m 12.', 'Give me 10 catchy YouTube title ideas for a gaming clips video.', 'Help me make a study plan for a test next week.', 'Tell me a crazy fact I\'ve never heard.']
+      .map(q => '<button class="chip" data-q="' + esc(q) + '">' + esc(q) + '</button>').join("") + '</div></section>';
+}
+
+function setMode(m){ document.querySelectorAll(".mode").forEach(x => x.classList.toggle("on", x.dataset.mode === m)); }
+function curMode(){ return document.querySelector(".mode.on").dataset.mode; }
+
+function openChat(c){
+  current = c; activeProject = c.projectId || null;
+  chatEl.innerHTML = "";
+  c.messages.forEach(m => addMsg(m.role, m.role === "user" ? m.content : md(m.content)));
+  setMode(c.mode || "balanced");
+  $("side").classList.remove("open");
+  renderSide();
+}
+function newChat(){ current = null; activeProject = null; showHero(); setMode("balanced"); $("side").classList.remove("open"); renderSide(); input.focus(); }
+function selectProject(p){ current = null; activeProject = p.id; state.open[p.id] = true; save(); showHero(); $("side").classList.remove("open"); renderSide(); input.focus(); }
+
+async function send(text){
+  text = text.trim();
+  if (!text || busy) return;
+  if (!current) {
+    current = { id: uid(), title: text.length > 40 ? text.slice(0, 40) + "…" : text, messages: [], projectId: activeProject, pinned: false, mode: curMode(), updated: Date.now() };
+    state.chats.push(current);
+  }
+  const chat = current;
+  chat.mode = curMode(); chat.updated = Date.now();
+  busy = true; sendBtn.disabled = true;
+  addMsg("user", text);
+  chat.messages.push({ role: "user", content: text });
+  save(); renderSide();
+
+  const b = addMsg("bot", '<span class="thinking">Wisely is thinking…</span>');
+  const proj = state.projects.find(x => x.id === chat.projectId);
+
+  let answer = "";
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: chat.mode, project: proj ? proj.name : null, messages: chat.messages })
+    });
+    if (!res.ok) throw new Error(res.status === 429 ? "busy" : "failed");
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      answer += dec.decode(value, { stream: true });
+      if (current === chat) { b.innerHTML = md(answer); scroller.scrollTop = scroller.scrollHeight; }
+    }
+    if (!answer) throw new Error("failed");
+    chat.messages.push({ role: "assistant", content: answer });
+  } catch(e){
+    if (answer) { chat.messages.push({ role: "assistant", content: answer }); }
+    else {
+      chat.messages.pop();
+      const msg = e.message === "busy" ? "Too many questions at once! Wait a moment and try again." : "Hoo-oops, something went wrong. Try again.";
+      b.innerHTML = '<span class="err">' + msg + '</span>';
+    }
+  } finally {
+    chat.updated = Date.now(); save(); renderSide();
+    busy = false; sendBtn.disabled = false; input.focus();
+  }
+}
+
+// ---------- events ----------
+$("form").addEventListener("submit", e => { e.preventDefault(); const t = input.value; input.value = ""; grow(); send(t); });
+input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("form").requestSubmit(); } });
+function grow(){ input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 180) + "px"; }
+input.addEventListener("input", grow);
+document.addEventListener("click", e => {
+  const chip = e.target.closest(".chip"); if (chip) send(chip.dataset.q);
+  const m = e.target.closest(".mode"); if (m) { setMode(m.dataset.mode); if (current) { current.mode = m.dataset.mode; save(); } }
+});
+$("newChat").onclick = newChat;
+$("addProj").onclick = () => { addingProject = true; state.projects.length; renderSide(); };
+$("menu").onclick = () => $("side").classList.toggle("open");
+
+load(); showHero(); renderSide();
+</script>
+</body>
+</html>
