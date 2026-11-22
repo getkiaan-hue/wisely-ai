@@ -3,13 +3,17 @@
 export const config = { runtime: "edge" };
 
 const MODEL = "gemini-3.5-flash";  // has a free tier; "gemini-3.1-flash-lite" is a backup option
-const MAX_REPLY_TOKENS = 4096;     // caps how long one answer can be
+const MAX_REPLY_TOKENS = 8192;     // caps how long one answer can be
 const MAX_HISTORY = 20;            // only the last 20 messages are sent
 const MAX_MESSAGE_CHARS = 4000;    // blocks giant pasted messages
+const MAX_FILE_TEXT = 100000;      // max characters read from one text/doc file
+const MAX_INLINE_BYTES = 4200000;  // total size of photos/PDFs in one request
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"];
 
 const BASE =
   "You are Wisely AI, a wise, friendly AI assistant with an owl as its mascot. Your name is Wisely. " +
   "If asked who made you, say you were created by Kiaan Sangra. Use simple Markdown for formatting when helpful. " +
+  "Users can attach photos, PDFs and documents, and share links; when they do, look at them carefully and use them in your answer. " +
   "Keep content appropriate for all ages.";
 
 const MODES = {
@@ -18,33 +22,61 @@ const MODES = {
   creative: "Be imaginative and full of fresh ideas. Offer several options and bold suggestions."
 };
 
+const NO_ANSWER =
+  "🦉 Hmm, I couldn't come up with an answer for that one. It may have been blocked by a safety filter. Try asking a different way.";
+
 export default async function handler(req) {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
   const key = process.env.GEMINI_API_KEY;
-  if (!key) return new Response("Server is missing GEMINI_API_KEY", { status: 500 });
+  if (!key) return new Response("Server is missing GEMINI_API_KEY (error 500)", { status: 500 });
 
   let body;
-  try { body = await req.json(); } catch { return new Response("Bad request", { status: 400 }); }
+  try { body = await req.json(); } catch { return new Response("Bad request (error 400)", { status: 400 }); }
 
-  // Clean up what the browser sent.
-  const messages = (Array.isArray(body.messages) ? body.messages : [])
-    .filter(m => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
-    .map(m => ({ role: m.role, content: m.content.slice(0, MAX_MESSAGE_CHARS) }))
-    .slice(-MAX_HISTORY);
-  while (messages.length && messages[0].role !== "user") messages.shift();
-  if (!messages.length || messages[messages.length - 1].role !== "user") {
-    return new Response("Bad request", { status: 400 });
+  // Turn what the browser sent into Gemini's format, checking everything along the way.
+  let inlineBytes = 0;
+  const contents = [];
+  const raw = (Array.isArray(body.messages) ? body.messages : []).slice(-MAX_HISTORY);
+  for (const m of raw) {
+    if (m.role !== "user" && m.role !== "assistant") continue;
+    const parts = [];
+    if (m.role === "user" && Array.isArray(m.attachments)) {
+      for (const a of m.attachments.slice(0, 5)) {
+        const name = String(a.name || "file").slice(0, 100);
+        if (typeof a.data === "string" && ALLOWED_TYPES.includes(a.mimeType)) {
+          inlineBytes += a.data.length;
+          if (inlineBytes > MAX_INLINE_BYTES) return new Response("Files too big (error 413)", { status: 413 });
+          parts.push({ text: `[Attached file: ${name}]` });
+          parts.push({ inlineData: { mimeType: a.mimeType, data: a.data } });
+        } else if (typeof a.text === "string") {
+          parts.push({ text: `[Attached file: ${name}]\n${a.text.slice(0, MAX_FILE_TEXT)}\n[End of ${name}]` });
+        } else {
+          parts.push({ text: `[The user attached "${name}" earlier, but it is no longer available.]` });
+        }
+      }
+    }
+    const text = typeof m.content === "string" ? m.content.slice(0, MAX_MESSAGE_CHARS) : "";
+    if (text.trim()) parts.push({ text });
+    if (!parts.length) continue;
+    contents.push({ role: m.role === "assistant" ? "model" : "user", parts });
+  }
+  while (contents.length && contents[0].role !== "user") contents.shift();
+  if (!contents.length || contents[contents.length - 1].role !== "user") {
+    return new Response("Bad request (error 400)", { status: 400 });
   }
 
   const mode = MODES[body.mode] ? body.mode : "balanced";
   const project = typeof body.project === "string" ? body.project.slice(0, 80) : "";
   const system = BASE + " " + MODES[mode] + (project ? ` This chat is part of the user's project called "${project}".` : "");
 
-  // Gemini calls the AI's role "model" instead of "assistant".
-  const contents = messages.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+  // If the newest message has a link in it, let Gemini open and read the page.
+  const lastText = contents[contents.length - 1].parts.map(p => p.text || "").join(" ");
+  const hasLink = /https?:\/\/\S+/i.test(lastText);
 
-  const upstream = await fetch(
+  // "Low" thinking makes answers start much faster. If Gemini doesn't accept an option,
+  // try again without it (first without fast mode, then without link reading).
+  const callGemini = ({ links, fast }) => fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`,
     {
       method: "POST",
@@ -52,14 +84,24 @@ export default async function handler(req) {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents,
-        generationConfig: { maxOutputTokens: MAX_REPLY_TOKENS }
+        ...(links ? { tools: [{ urlContext: {} }] } : {}),
+        generationConfig: { maxOutputTokens: MAX_REPLY_TOKENS, ...(fast ? { thinkingConfig: { thinkingLevel: "low" } } : {}) }
       })
     }
   );
 
+  const opts = { links: hasLink, fast: true };
+  let upstream = await callGemini(opts);
+  while (!upstream.ok && upstream.status === 400 && (opts.fast || opts.links)) {
+    console.error("Gemini said 400, retrying with fewer options:", await upstream.text().catch(() => ""));
+    if (opts.fast) opts.fast = false; else opts.links = false;
+    upstream = await callGemini(opts);
+  }
+
   if (!upstream.ok || !upstream.body) {
     console.error("Gemini error", upstream.status, await upstream.text().catch(() => ""));
-    return new Response("AI error", { status: upstream.status === 429 ? 429 : 502 });
+    const status = upstream.status === 429 ? 429 : 502;
+    return new Response(`AI error (error ${upstream.status})`, { status });
   }
 
   // Turn Gemini's event stream into plain text the page can show word by word.
@@ -67,22 +109,33 @@ export default async function handler(req) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
+  let gotText = false;
+
+  const handleLine = (line, controller) => {
+    if (!line.startsWith("data:")) return;
+    try {
+      const event = JSON.parse(line.slice(5));
+      if (event.promptFeedback?.blockReason) console.error("Blocked:", event.promptFeedback.blockReason);
+      const parts = event.candidates?.[0]?.content?.parts || [];
+      for (const p of parts) {
+        if (p.text && !p.thought) { gotText = true; controller.enqueue(encoder.encode(p.text)); }
+      }
+    } catch { /* ignore partial lines */ }
+  };
 
   const stream = new ReadableStream({
     async pull(controller) {
       const { done, value } = await reader.read();
-      if (done) { controller.close(); return; }
+      if (done) {
+        if (buffer) handleLine(buffer.trim(), controller);
+        if (!gotText) controller.enqueue(encoder.encode(NO_ANSWER));
+        controller.close();
+        return;
+      }
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        try {
-          const event = JSON.parse(line.slice(5));
-          const parts = event.candidates?.[0]?.content?.parts || [];
-          for (const p of parts) if (p.text && !p.thought) controller.enqueue(encoder.encode(p.text));
-        } catch { /* ignore partial lines */ }
-      }
+      for (const line of lines) handleLine(line.trim(), controller);
     },
     cancel() { reader.cancel(); }
   });
