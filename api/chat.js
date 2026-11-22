@@ -2,7 +2,7 @@
 // This file runs on Vercel, never in the visitor's browser, so your API key stays secret.
 export const config = { runtime: "edge" };
 
-const MODEL = "gemini-3.5-flash";  // has a free tier; "gemini-3.1-flash-lite" is a backup option
+const MODEL = "gemini-3.1-flash-lite";  // has a free tier; "gemini-3.1-flash-lite" is a backup option
 const MAX_REPLY_TOKENS = 8192;     // caps how long one answer can be
 const MAX_HISTORY = 20;            // only the last 20 messages are sent
 const MAX_MESSAGE_CHARS = 4000;    // blocks giant pasted messages
