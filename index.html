@@ -296,7 +296,7 @@ async function send(text){
     if (answer) { chat.messages.push({ role: "assistant", content: answer }); }
     else {
       chat.messages.pop();
-      const msg = e.message === "busy" ? "Too many questions at once! Wait a moment and try again." : "Hoo-oops, something went wrong. Try again.";
+      const msg = e.message === "busy" ? "Wisely is resting! Too many questions right now. Try again in a minute, or tomorrow if the daily limit was reached." : "Hoo-oops, something went wrong. Try again.";
       b.innerHTML = '<span class="err">' + msg + '</span>';
     }
   } finally {
